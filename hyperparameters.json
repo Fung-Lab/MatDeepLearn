@@ -1,0 +1,88 @@
+{
+    "model_parameters": {
+        "CGCNN": {
+            "dim1": 128,
+            "dim2": 128,
+            "conv_count": 3,
+            "fc_count": 2,
+            "pool": "set2set",
+            "epochs": 200,
+            "batch_size": 128,
+            "lr": 0.001            
+        },
+        "MPNN": {
+            "dim1": 64,
+            "dim2": 128,
+            "dim3": 64,
+            "conv_count": 3,
+            "fc_count": 2,
+            "pool": "set2set",
+            "epochs": 200,
+            "batch_size": 128,
+            "lr": 0.001              
+        },
+        "SchNet": {
+            "dim1": 64,
+            "dim2": 128,
+            "dim3": 64,
+            "conv_count": 3,
+            "fc_count": 2,
+            "pool": "set2set",
+            "cutoff": 8,
+            "epochs": 200,
+            "batch_size": 128,
+            "lr": 0.001             
+        },
+        "MEGNet": {
+            "dim1": 64,
+            "dim2": 128,
+            "dim3": 64,
+            "conv_count": 3,
+            "fc_count": 2,
+            "pool": "set2set",
+            "epochs": 200,
+            "batch_size": 128,
+            "lr": 0.001              
+        },
+        "GCN_net": {
+            "dim1": 128,
+            "dim2": 128,
+            "conv_count": 3,
+            "fc_count": 2,
+            "pool": "set2set",
+            "epochs": 200,
+            "batch_size": 128,
+            "lr": 0.001              
+        },
+        "SM": {
+            "dim1": 128, 
+            "fc_count": 4,
+            "epochs": 200,
+            "batch_size": 128,
+            "lr": 0.001              
+        },
+        "SOAP": {
+            "dim1": 128, 
+            "fc_count": 4,
+            "epochs": 200,
+            "batch_size": 128,
+            "lr": 0.001              
+        }
+    },
+    "input_parameters": {
+        "SOAP": {
+            "SOAP_nmax": 6,
+            "SOAP_lmax": 4,
+            "SOAP_sigma": 0.3,
+            "SOAP_rcut": 8
+        },       
+        "graph": {
+            "max_neighbors": 12,
+            "min_radius": 0,
+            "max_radius": 8,
+            "gaussians": 50,    
+            "fullconn":"False",
+            "voronoi":"False"
+        } 
+    }
+}
