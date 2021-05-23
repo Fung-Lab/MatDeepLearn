@@ -1,9 +1,0 @@
-{
-    "dim1": 70,
-    "dim2": 50,
-    "conv_count": 6,
-    "fc_count": 4,
-    "pool": "global_add_pool",
-    "lr": 0.00013,
-    "batch_size": 120
-}

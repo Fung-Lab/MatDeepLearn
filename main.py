@@ -6,535 +6,546 @@ import sys
 import json
 import random
 import numpy as np
-import ase
 import pprint
-
-from matdeeplearn import models, process, training
+import yaml
 
 import torch
-from torch_geometric.data import DataLoader, Dataset, Data
-import torch_geometric.transforms as T
+import torch.multiprocessing as mp
 
 import ray
 from ray import tune
 
+from matdeeplearn import models, process, training
+
 ################################################################################
 #
 ################################################################################
-"""
-MatDeepLearn code 
-"""
+#  MatDeepLearn code
 ################################################################################
 #
 ################################################################################
+def main():
+    start_time = time.time()
+    print("Starting...")
+    print(
+        "GPU is available:",
+        torch.cuda.is_available(),
+        ", Quantity: ",
+        torch.cuda.device_count(),
+    )
 
-start_time = time.time()
-print("Starting...")
-print(
-    "GPU is available:",
-    torch.cuda.is_available(),
-    ",Quantity: ",
-    torch.cuda.device_count(),
-)
+    parser = argparse.ArgumentParser(description="MatDeepLearn inputs")
+    ###Job arguments
+    parser.add_argument(
+        "--config_path",
+        default="config.yml",
+        type=str,
+        help="Location of config file (default: config.json)",
+    )
+    parser.add_argument(
+        "--run_mode",
+        default=None,
+        type=str,
+        help="run modes: Training, Predict, Repeat, CV, Hyperparameter, Ensemble, Analysis",
+    )
+    parser.add_argument(
+        "--job_name",
+        default=None,
+        type=str,
+        help="name of your job and output files/folders",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        type=str,
+        help="CGCNN, MPNN, SchNet, MEGNet, GCN_net, SOAP, SM",
+    )
+    parser.add_argument(
+        "--seed",
+        default=None,
+        type=int,
+        help="seed for data split, 0=random",
+    )
+    parser.add_argument(
+        "--model_path",
+        default=None,
+        type=str,
+        help="path of the model .pth file",
+    )
+    parser.add_argument(
+        "--save_model",
+        default=None,
+        type=str,
+        help="Save model",
+    )
+    parser.add_argument(
+        "--load_model",
+        default=None,
+        type=str,
+        help="Load model",
+    )
+    parser.add_argument(
+        "--write_output",
+        default=None,
+        type=str,
+        help="Write outputs to csv",
+    )
+    parser.add_argument(
+        "--parallel",
+        default=None,
+        type=str,
+        help="Use parallel mode (ddp) if available",
+    )
+    parser.add_argument(
+        "--reprocess",
+        default=None,
+        type=str,
+        help="Reprocess data since last run",
+    )
+    ###Processing arguments
+    parser.add_argument(
+        "--data_path",
+        default=None,
+        type=str,
+        help="Location of data containing structures (json or any other valid format) and accompanying files",
+    )
+    parser.add_argument("--format", default=None, type=str, help="format of input data")
+    ###Training arguments
+    parser.add_argument("--train_ratio", default=None, type=float, help="train ratio")
+    parser.add_argument(
+        "--val_ratio", default=None, type=float, help="validation ratio"
+    )
+    parser.add_argument("--test_ratio", default=None, type=float, help="test ratio")
+    parser.add_argument(
+        "--verbosity", default=None, type=int, help="prints errors every x epochs"
+    )
+    parser.add_argument(
+        "--target_index",
+        default=None,
+        type=int,
+        help="which column to use as target property in the target file",
+    )
+    ###Model arguments
+    parser.add_argument(
+        "--epochs",
+        default=None,
+        type=int,
+        help="number of total epochs to run",
+    )
+    parser.add_argument("--batch_size", default=None, type=int, help="batch size")
+    parser.add_argument("--lr", default=None, type=float, help="learning rate")
 
-parser = argparse.ArgumentParser(description="ML framework")
-###Training arguments
-parser.add_argument(
-    "--job_name",
-    default="myjob",
-    type=str,
-    help="name of your job and output files/folders (default:myjob)",
-)
-parser.add_argument(
-    "--train_ratio", default=0.8, type=float, help="train ratio (default:0.8)"
-)
-parser.add_argument(
-    "--val_ratio", default=0.05, type=float, help="validation ratio (default:0.05)"
-)
-parser.add_argument(
-    "--test_ratio", default=0.15, type=float, help="test ratio (default:0.15)"
-)
-parser.add_argument(
-    "--epochs",
-    default=None,
-    type=int,
-    help="number of total epochs to run (default:None)",
-)
-parser.add_argument(
-    "--batch_size", default=None, type=int, help="batch size (default:None)"
-)
-parser.add_argument(
-    "--lr", default=None, type=float, help="initial learning rate (default:None)"
-)
-parser.add_argument(
-    "--run_mode",
-    default="training",
-    type=str,
-    help="run modes: training, predict, CV, hyperparameter, training_ensemble, training_repeat, analysis (default: training )",
-)
-parser.add_argument(
-    "--verbosity", default=5, type=int, help="prints errors every x epochs (default: 5)"
-)
-parser.add_argument(
-    "--seed",
-    default=0,
-    type=int,
-    help="seed for data split, 0=random (default:0)",
-)
-parser.add_argument(
-    "--loss",
-    default="l1_loss",
-    type=str,
-    help="l1_loss, mse_loss, binary_cross_entropy (default: l1_loss (MAE))",
-)
-parser.add_argument(
-    "--write_output",
-    default="True",
-    type=str,
-    help="Write outputs to csv (default: True)",
-)
-parser.add_argument(
-    "--target_index",
-    default=0,
-    type=int,
-    help="which column to use as target property in the target file (default:0)",
-)
-###Model arguments
-parser.add_argument(
-    "--model",
-    default="CGCNN",
-    type=str,
-    help="CGCNN, MPNN, SchNet, MEGNet, GCN_net, SOAP, SM (default:CGCNN)",
-)
-parser.add_argument(
-    "--model_path",
-    default="myjob_model.pth",
-    type=str,
-    help="path of the model .pth file (default:myjob_model.pth)",
-)
-parser.add_argument(
-    "--save_model",
-    default="True",
-    type=str,
-    help="Write outputs to csv (default: True)",
-)
-parser.add_argument(
-    "--load_model",
-    default="False",
-    type=str,
-    help="Write outputs to csv (default: False )",
-)
-###Processing arguments
-parser.add_argument(
-    "--hyperparameter_path",
-    default="hyperparameters.json",
-    type=str,
-    help="Location of ML hyperparameter file (default:hyperparameters.json)",
-)
-parser.add_argument(
-    "--data_path",
-    default="data/2D_data",
-    type=str,
-    help="Location of data containing structures (json or any other valid format) and accompanying files (default: data/2D_data)",
-)
-parser.add_argument(
-    "--reprocess",
-    default="False",
-    type=str,
-    help="Reprocess data since last run (default:False)",
-)
-parser.add_argument(
-    "--format", default="json", type=str, help="format of input data (default:--)"
-)
-parser.add_argument(
-    "--dictionary_path",
-    default="atom_dict.json",
-    type=str,
-    help="path to atom features dictionary (default:atom_dict.json)",
-)
-parser.add_argument(
-    "--target_path",
-    default="targets.csv",
-    type=str,
-    help="path to file-target designation file (default: --)",
-)
-parser.add_argument(
-    "--extra_features",
-    default="False",
-    type=str,
-    help="Calculates extra SOAP and SM features (default: False)",
-)
-# Mode specific arguments
-parser.add_argument(
-    "--hyper_samples",
-    default=160,
-    type=int,
-    help="number of trials for hyperparameter optimization (default:160)",
-)
-parser.add_argument(
-    "--hyper_concurrency",
-    default=8,
-    type=int,
-    help="hyperparameter optimization concurrency (default:8)",
-)
-parser.add_argument(
-    "--hyper_resume",
-    default="False",
-    type=str,
-    help="Resume hyperparameter training (default:False)",
-)
-parser.add_argument(
-    "--ensemble_list",
-    default="CGCNN,MPNN,SchNet,MEGNet",
-    type=str,
-    help="List of models for ensemble; dont insert spaces between model names (default:CGCNN,MPNN,SchNet,MEGNet)",
-)
-parser.add_argument(
-    "--repeat_trials",
-    default=5,
-    type=int,
-    help="Number of repeat trials for repeated training (default:5)",
-)
-parser.add_argument(
-    "--cv_folds",
-    default=5,
-    type=int,
-    help="Number of folds for cross validation (default:5)",
-)
+    ##Get arguments from command line
+    args = parser.parse_args(sys.argv[1:])
 
-# Get arguments from command line
-args = parser.parse_args(sys.argv[1:])
+    ##Open provided config file
+    assert os.path.exists(args.config_path), (
+        "Config file not found in " + args.config_path
+    )
+    with open(args.config_path, "r") as ymlfile:
+        config = yaml.load(ymlfile, Loader=yaml.FullLoader)
 
-with open(args.hyperparameter_path) as f:
-    hyperparameters = json.load(f)
+    ##Update config values from command line
+    if args.run_mode != None:
+        config["Job"]["run_mode"] = args.run_mode
+    run_mode = config["Job"].get("run_mode")
+    config["Job"] = config["Job"].get(run_mode)
+    if config["Job"] == None:
+        print("Invalid run mode")
+        sys.exit()
 
-model_params = hyperparameters["model_parameters"][args.model]
-input_params = hyperparameters["input_parameters"]
+    if args.job_name != None:
+        config["Job"]["job_name"] = args.job_name
+    if args.model != None:
+        config["Job"]["model"] = args.model
+    if args.seed != None:
+        config["Job"]["seed"] = args.seed
+    if args.model_path != None:
+        config["Job"]["model_path"] = args.model_path
+    if args.load_model != None:
+        config["Job"]["load_model"] = args.load_model
+    if args.save_model != None:
+        config["Job"]["save_model"] = args.save_model
+    if args.write_output != None:
+        config["Job"]["write_output"] = args.write_output
+    if args.parallel != None:
+        config["Job"]["parallel"] = args.parallel
+    if args.reprocess != None:
+        config["Job"]["reprocess"] = args.reprocess
 
-args.min_radius = float(input_params["graph"]["min_radius"])
-args.max_radius = float(input_params["graph"]["max_radius"])
-args.max_neighbors = int(input_params["graph"]["max_neighbors"])
-args.gaussians = int(input_params["graph"]["gaussians"])
-args.voronoi = str(input_params["graph"]["voronoi"])
-args.fullconn = str(input_params["graph"]["fullconn"])
+    if args.data_path != None:
+        config["Processing"]["data_path"] = args.data_path
+    if args.format != None:
+        config["Processing"]["data_format"] = args.format
 
-args.SOAP_rcut = float(input_params["SOAP"]["SOAP_rcut"])
-args.SOAP_nmax = int(input_params["SOAP"]["SOAP_nmax"])
-args.SOAP_lmax = int(input_params["SOAP"]["SOAP_lmax"])
-args.SOAP_sigma = float(input_params["SOAP"]["SOAP_sigma"])
+    if args.train_ratio != None:
+        config["Training"]["train_ratio"] = args.train_ratio
+    if args.val_ratio != None:
+        config["Training"]["val_ratio"] = args.val_ratio
+    if args.test_ratio != None:
+        config["Training"]["test_ratio"] = args.test_ratio
+    if args.verbosity != None:
+        config["Training"]["verbosity"] = args.verbosity
+    if args.target_index != None:
+        config["Training"]["target_index"] = args.target_index
 
-if args.epochs == None:
-    args.epochs = int(model_params["epochs"])
-if args.lr == None:
-    args.lr = float(model_params["lr"])
-if args.batch_size == None:
-    args.batch_size = int(model_params["batch_size"])
+    for key in config["Models"]:
+        if args.epochs != None:
+            config["Models"][key]["epochs"] = args.epochs
+        if args.batch_size != None:
+            config["Models"][key]["batch_size"] = args.batch_size
+        if args.lr != None:
+            config["Models"][key]["lr"] = args.lr
 
-print("Settings: ")
-pprint.pprint(vars(args))
-
-################################################################################
-#  Begin processing
-################################################################################
-
-if args.seed == 0:
-    args.seed = np.random.randint(1, 1e6)
-
-if args.run_mode != "hyperparameter":
-
-    process_start_time = time.time()
-    if args.reprocess == "True":
-        os.system("rm -rf " + str(args.data_path) + "/processed")
-
-    if args.voronoi == 'True':
-        transform = T.Compose([process.Get_Voronoi(), process.Get_Y(index=args.target_index)])
-        dataset = process.StructureDataset(
-            data_path=args.data_path,
-            save_dir=args.data_path,
-            params=args,
-            transform=transform,
-        )
-    elif args.fullconn == 'True':
-        transform = T.Compose([process.Get_Full(), process.Get_Y(index=args.target_index)])
-        dataset = process.StructureDataset(
-            data_path=args.data_path,
-            save_dir=args.data_path,
-            params=args,
-            transform=transform,
-        )
+    if run_mode == "Predict":
+        config["Models"] = {}
+    elif run_mode == "Ensemble":
+        config["Job"]["ensemble_list"] = config["Job"]["ensemble_list"].split(",")
+        models_temp = config["Models"]
+        config["Models"] = {}
+        for i in range(0, len(config["Job"]["ensemble_list"])):
+            config["Models"][config["Job"]["ensemble_list"][i]] = models_temp.get(
+                config["Job"]["ensemble_list"][i]
+            )
     else:
-        transform = T.Compose([process.Get_Y(index=args.target_index)])
-        dataset = process.StructureDataset(
-            data_path=args.data_path, save_dir=args.data_path, params=args, transform=transform,
+        config["Models"] = config["Models"].get(config["Job"]["model"])
+
+    if config["Job"]["seed"] == 0:
+        config["Job"]["seed"] = np.random.randint(1, 1e6)
+
+    ##Print and write settings for job
+    print("Settings: ")
+    pprint.pprint(config)
+    with open(str(config["Job"]["job_name"]) + "_settings.txt", "w") as log_file:
+        pprint.pprint(config, log_file)
+
+    ################################################################################
+    #  Begin processing
+    ################################################################################
+
+    if run_mode != "Hyperparameter":
+
+        process_start_time = time.time()
+
+        dataset = process.get_dataset(
+            config["Processing"]["data_path"],
+            config["Training"]["target_index"],
+            config["Job"]["reprocess"],
+            config["Processing"],
         )
-    print("--- %s seconds for processing ---" % (time.time() - process_start_time))
 
-    # print(dataset, dataset[0], dataset[-1])
+        print("Dataset used:", dataset)
+        print(dataset[0])
 
-elif args.run_mode == "hyperparameter":
-    if args.reprocess == "False":
-        dataset = process.StructureDataset(
-            data_path=args.data_path, save_dir=args.data_path, params=args
+        print("--- %s seconds for processing ---" % (time.time() - process_start_time))
+
+    ################################################################################
+    #  Training begins
+    ################################################################################
+    
+    ##Regular training
+    if run_mode == "Training":
+
+        print("Starting regular training")
+        print(
+            "running for "
+            + str(config["Models"]["epochs"])
+            + " epochs"
+            + " on "
+            + str(config["Job"]["model"])
+            + " model"
+        )
+        world_size = torch.cuda.device_count()
+        if world_size == 0:
+            print("Running on CPU - this will be slow")
+            training.train_regular(
+                "cpu",
+                world_size,
+                config["Processing"]["data_path"],
+                config["Job"],
+                config["Training"],
+                config["Models"],
+            )
+
+        elif world_size > 0:
+            if config["Job"]["parallel"] == "True":
+                print("Running on", world_size, "GPUs")
+                mp.spawn(
+                    training.train_regular,
+                    args=(
+                        world_size,
+                        config["Processing"]["data_path"],
+                        config["Job"],
+                        config["Training"],
+                        config["Models"],
+                    ),
+                    nprocs=world_size,
+                    join=True,
+                )
+            if config["Job"]["parallel"] == "False":
+                print("Running on one GPU")
+                training.train_regular(
+                    "cuda",
+                    world_size,
+                    config["Processing"]["data_path"],
+                    config["Job"],
+                    config["Training"],
+                    config["Models"],
+                )
+
+    ##Predicting from a trained model
+    elif run_mode == "Predict":
+
+        print("Starting prediction from trained model")
+        train_error = training.predict(
+            dataset, config["Training"]["loss"], config["Job"]
+        )
+        print("Test Error: {:.5f}".format(train_error))
+
+    ##Running n fold cross validation
+    elif run_mode == "CV":
+
+        print("Starting cross validation")
+        print(
+            "running for "
+            + str(config["Models"]["epochs"])
+            + " epochs"
+            + " on "
+            + str(config["Job"]["model"])
+            + " model"
+        )
+        world_size = torch.cuda.device_count()
+        if world_size == 0:
+            print("Running on CPU - this will be slow")
+            training.train_CV(
+                "cpu",
+                world_size,
+                config["Processing"]["data_path"],
+                config["Job"],
+                config["Training"],
+                config["Models"],
+            )
+
+        elif world_size > 0:
+            if config["Job"]["parallel"] == "True":
+                print("Running on", world_size, "GPUs")
+                mp.spawn(
+                    training.train_CV,
+                    args=(
+                        world_size,
+                        config["Processing"]["data_path"],
+                        config["Job"],
+                        config["Training"],
+                        config["Models"],
+                    ),
+                    nprocs=world_size,
+                    join=True,
+                )
+            if config["Job"]["parallel"] == "False":
+                print("Running on one GPU")
+                training.train_CV(
+                    "cuda",
+                    world_size,
+                    config["Processing"]["data_path"],
+                    config["Job"],
+                    config["Training"],
+                    config["Models"],
+                )
+
+    ##Running repeated trials
+    elif run_mode == "Repeat":
+        print("Repeat training for " + str(config["Job"]["repeat_trials"]) + " trials")
+        training.train_repeat(
+            config["Processing"]["data_path"],
+            config["Job"],
+            config["Training"],
+            config["Models"],
         )
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ##Hyperparameter optimization
+    elif run_mode == "Hyperparameter":
 
-################################################################################
-#  Training begins
-################################################################################
-
-# Regular training
-if args.run_mode == "training":
-
-    print("Starting regular training")
-    print(
-        "running with "
-        + str(args.epochs)
-        + " epochs"
-        + " on "
-        + str(args.model)
-        + " model"
-    )
-    train_error, val_error, test_error = training.train_regular(
-        model_params,
-        dataset,
-        device,
-        args,
-        load=args.load_model,
-        write=args.write_output,
-        save=args.save_model,
-        print_model="True",
-    )
-
-    print("Test Error: {:.5f}".format(test_error))
-
-# Predicting from a trained model
-elif args.run_mode == "predict":
-
-    print("Starting prediction from trained model")
-    print(
-        "running with "
-        + str(args.epochs)
-        + " epochs"
-        + " on "
-        + str(args.model)
-        + " model"
-    )
-    train_error = training.predict(dataset, device, args, write=args.write_output)
-
-    print("Test Error: {:.5f}".format(train_error))
-
-# Running n fold cross validation
-elif args.run_mode == "CV":
-
-    print("Starting cross validation")
-    print(
-        "running with "
-        + str(args.epochs)
-        + " epochs"
-        + " on "
-        + str(args.model)
-        + " model"
-    )
-    CV_error = training.train_CV(
-        model_params, dataset, device, args, write=args.write_output
-    )
-    print("CV error", CV_error)
-
-# Hyperparameter optimization
-elif args.run_mode == "hyperparameter":
-
-    print("Starting hyperparameter optimization")
-    print(
-        "running with "
-        + str(args.epochs)
-        + " epochs"
-        + " on "
-        + str(args.model)
-        + " model"
-    )
-
-    # set up search space for each model; these can subject to change
-    hyper_args = {}
-    dim1 = [x * 10 for x in range(1, 20)]
-    dim2 = [x * 10 for x in range(1, 20)]
-    dim3 = [x * 10 for x in range(1, 20)]
-    batch = [x * 10 for x in range(1, 20)]
-    hyper_args["SchNet"] = {
-        "dim1": tune.choice(dim1),
-        "dim2": tune.choice(dim2),
-        "dim3": tune.choice(dim3),
-        "conv_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        "fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
-        "pool": tune.choice(
-            ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
-        ),
-        "lr": tune.loguniform(1e-4, 0.05),
-        "batch_size": tune.choice(batch),
-        "cutoff": args.max_radius,
-    }
-    hyper_args["CGCNN"] = {
-        "dim1": tune.choice(dim1),
-        "dim2": tune.choice(dim2),
-        "conv_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        "fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
-        "pool": tune.choice(
-            ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
-        ),
-        "lr": tune.loguniform(1e-4, 0.05),
-        "batch_size": tune.choice(batch),
-    }
-    hyper_args["MPNN"] = {
-        "dim1": tune.choice(dim1),
-        "dim2": tune.choice(dim2),
-        "dim3": tune.choice(dim3),
-        "conv_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        "fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
-        "pool": tune.choice(
-            ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
-        ),
-        "lr": tune.loguniform(1e-4, 0.05),
-        "batch_size": tune.choice(batch),
-    }
-    hyper_args["MEGNet"] = {
-        "dim1": tune.choice(dim1),
-        "dim2": tune.choice(dim2),
-        "dim3": tune.choice(dim3),
-        "conv_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        "fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
-        "pool": tune.choice(["mean", "sum", "max", "set2set"]),
-        "lr": tune.loguniform(1e-4, 0.05),
-        "batch_size": tune.choice(batch),
-    }
-    hyper_args["GCN_net"] = {
-        "dim1": tune.choice(dim1),
-        "dim2": tune.choice(dim2),
-        "conv_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        "fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
-        "pool": tune.choice(
-            ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
-        ),
-        "lr": tune.loguniform(1e-4, 0.05),
-        "batch_size": tune.choice(batch),
-    }
-    hyper_args["SOAP"] = {
-        "dim1": tune.choice(dim1),
-        "fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
-        "lr": tune.loguniform(1e-4, 0.05),
-        "batch_size": tune.choice(batch),
-        "nmax": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        "lmax": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-        "sigma": tune.uniform(0.1, 2.0),
-        "rcut": tune.uniform(1.0, 10.0),
-    }
-    hyper_args["SM"] = {
-        "dim1": tune.choice(dim1),
-        "fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
-        "lr": tune.loguniform(1e-4, 0.05),
-        "batch_size": tune.choice(batch),
-    }
-
-    best_trial = training.tune_setup(hyper_args[args.model], args)
-    global_parameters = best_trial.config["global"]
-    del best_trial.config["global"]
-    hyperparameters = best_trial.config
-    hyperparameters = {
-        k: round(v, 5) if isinstance(v, float) else v
-        for k, v in hyperparameters.items()
-    }
-    with open("hyperparameters_optimized.json", "w", encoding="utf-8") as f:
-        json.dump(hyperparameters, f, ensure_ascii=False, indent=4)
-
-    print("Best trial hyper_args: {}".format(hyperparameters))
-    print(
-        "Best trial final validation error: {:.5f}".format(
-            best_trial.last_result["loss"]
+        print("Starting hyperparameter optimization")
+        print(
+            "running for "
+            + str(config["Models"]["epochs"])
+            + " epochs"
+            + " on "
+            + str(config["Job"]["model"])
+            + " model"
         )
-    )
 
-# ensemble
-elif args.run_mode == "training_ensemble":
+        ##Reprocess here if not reprocessing between trials
+        if config["Job"]["reprocess"] == "False":
+            process_start_time = time.time()
 
-    print("Starting simple (average) ensemble training")
-    args.ensemble_list = args.ensemble_list.split(",")
+            dataset = process.get_dataset(
+                config["Processing"]["data_path"],
+                config["Training"]["target_index"],
+                config["Job"]["reprocess"],
+                config["Processing"],
+            )
 
-    ensemble_test_error = training.train_ensemble(
-        args.ensemble_list,
-        hyperparameters["model_parameters"],
-        dataset,
-        device,
-        args,
-        write=args.write_output,
-        save=args.save_model,
-        print_model="False",
-    )
-    print("Ensemble Test Error: {:.5f}".format(ensemble_test_error))
+            print("Dataset used:", dataset)
+            print(dataset[0])
 
-# analysis mode
-elif args.run_mode == "analysis":
-    print("Starting analysis of graph features")
-    print(
-        "running with "
-        + str(args.epochs)
-        + " epochs"
-        + " on "
-        + str(args.model)
-        + " model"
-    )
-    # dict for the tsne settings; please refer to sklearn.manifold.TSNE for information on the function arguments
-    tsne_args = {
-        "perplexity": 50,
-        "early_exaggeration": 12,
-        "learning_rate": 300,
-        "n_iter": 5000,
-        "verbose": 1,
-        "random_state": 42,
-    }
-    # this saves the tsne output as a csv file with: structure id, y, tsne 1, tsne 2 as the columns
-    training.analysis(
-        model_params,
-        dataset,
-        device,
-        args,
-        tsne_args,
-        load=args.load_model,
-        write=args.write_output,
-        save=args.save_model,
-    )
+            if config["Training"]["target_index"] == -1:
+                config["Models"]["output_dim"] = len(dataset[0].y[0])
+            # print(len(dataset[0].y))
 
-# Running repeated trials
-elif args.run_mode == "training_repeat":
-    args.run_trials = 5
-    print("Starting training with repeats")
-    print(
-        "Using the "
-        + str(args.model)
-        + " model running for"
-        + str(args.epochs)
-        + " epochs"
-    )
-    trial_errors = training.train_repeat(
-        model_params,
-        dataset,
-        device,
-        args,
-        write=args.write_output,
-        save=args.save_model,
-    )
-    print(
-        "Train Average Error: {:.5f}".format(np.average(np.array(trial_errors)[:, 0])),
-        "Train Standard Deviation: {:.5f}".format(np.std(np.array(trial_errors)[:, 0])),
-    )
-    print(
-        "Val Average Error: {:.5f}".format(np.average(np.array(trial_errors)[:, 1])),
-        "Val Standard Deviation: {:.5f}".format(np.std(np.array(trial_errors)[:, 1])),
-    )
-    print(
-        "Test Average Error: {:.5f}".format(np.average(np.array(trial_errors)[:, 2])),
-        "Test Standard Deviation: {:.5f}".format(np.std(np.array(trial_errors)[:, 2])),
-    )
+            print(
+                "--- %s seconds for processing ---" % (time.time() - process_start_time)
+            )
 
-else:
-    print("No valid mode selected, try again")
+        ##Set up search space for each model; these can subject to change
+        hyper_args = {}
+        dim1 = [x * 10 for x in range(1, 20)]
+        dim2 = [x * 10 for x in range(1, 20)]
+        dim3 = [x * 10 for x in range(1, 20)]
+        batch = [x * 10 for x in range(1, 20)]
+        hyper_args["SchNet_demo"] = {
+            "dim1": tune.choice(dim1),
+            "dim2": tune.choice(dim2),
+            "dim3": tune.choice(dim3),
+            "gnn_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            "post_fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
+            "pool": tune.choice(
+                ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
+            ),
+            "lr": tune.loguniform(1e-4, 0.05),
+            "batch_size": tune.choice(batch),
+            "cutoff": config["Processing"]["graph_max_radius"],
+        }
+        hyper_args["CGCNN_demo"] = {
+            "dim1": tune.choice(dim1),
+            "dim2": tune.choice(dim2),
+            "gnn_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            "post_fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
+            "pool": tune.choice(
+                ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
+            ),
+            "lr": tune.loguniform(1e-4, 0.05),
+            "batch_size": tune.choice(batch),
+        }
+        hyper_args["MPNN_demo"] = {
+            "dim1": tune.choice(dim1),
+            "dim2": tune.choice(dim2),
+            "dim3": tune.choice(dim3),
+            "gnn_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            "post_fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
+            "pool": tune.choice(
+                ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
+            ),
+            "lr": tune.loguniform(1e-4, 0.05),
+            "batch_size": tune.choice(batch),
+        }
+        hyper_args["MEGNet_demo"] = {
+            "dim1": tune.choice(dim1),
+            "dim2": tune.choice(dim2),
+            "dim3": tune.choice(dim3),
+            "gnn_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            "post_fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
+            "pool": tune.choice(["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]),
+            "lr": tune.loguniform(1e-4, 0.05),
+            "batch_size": tune.choice(batch),
+        }
+        hyper_args["GCN_demo"] = {
+            "dim1": tune.choice(dim1),
+            "dim2": tune.choice(dim2),
+            "gnn_count": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            "post_fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
+            "pool": tune.choice(
+                ["global_mean_pool", "global_add_pool", "global_max_pool", "set2set"]
+            ),
+            "lr": tune.loguniform(1e-4, 0.05),
+            "batch_size": tune.choice(batch),
+        }
+        hyper_args["SOAP_demo"] = {
+            "dim1": tune.choice(dim1),
+            "post_fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
+            "lr": tune.loguniform(1e-4, 0.05),
+            "batch_size": tune.choice(batch),
+            "nmax": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            "lmax": tune.choice([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+            "sigma": tune.uniform(0.1, 2.0),
+            "rcut": tune.uniform(1.0, 10.0),
+        }
+        hyper_args["SM_demo"] = {
+            "dim1": tune.choice(dim1),
+            "post_fc_count": tune.choice([1, 2, 3, 4, 5, 6]),
+            "lr": tune.loguniform(1e-4, 0.05),
+            "batch_size": tune.choice(batch),
+        }
 
-print("--- %s total seconds elapsed ---" % (time.time() - start_time))
+        ##Run tune setup and trials
+        best_trial = training.tune_setup(
+            hyper_args[config["Job"]["model"]],
+            config["Job"],
+            config["Processing"],
+            config["Training"],
+            config["Models"],
+        )
+
+        ##Write hyperparameters to file
+        hyperparameters = best_trial.config["hyper_args"]
+        hyperparameters = {
+            k: round(v, 6) if isinstance(v, float) else v
+            for k, v in hyperparameters.items()
+        }
+        with open(
+            config["Job"]["job_name"] + "_optimized_hyperparameters.json",
+            "w",
+            encoding="utf-8",
+        ) as f:
+            json.dump(hyperparameters, f, ensure_ascii=False, indent=4)
+
+        ##Print best hyperparameters
+        print("Best trial hyper_args: {}".format(hyperparameters))
+        print(
+            "Best trial final validation error: {:.5f}".format(
+                best_trial.last_result["loss"]
+            )
+        )
+
+    ##Ensemble mode using simple averages
+    elif run_mode == "Ensemble":
+
+        print("Starting simple (average) ensemble training")
+        print("Ensemble list: ", config["Job"]["ensemble_list"])
+        training.train_ensemble(
+            config["Processing"]["data_path"],
+            config["Job"],
+            config["Training"],
+            config["Models"],
+        )
+
+    ##Analysis mode
+    ##NOTE: this only works for "early" pooling option, because it assumes the graph-level features are plotted, not the node-level ones
+    elif run_mode == "Analysis":
+        print("Starting analysis of graph features")
+
+        ##dict for the tsne settings; please refer to sklearn.manifold.TSNE for information on the function arguments
+        tsne_args = {
+            "perplexity": 50,
+            "early_exaggeration": 12,
+            "learning_rate": 300,
+            "n_iter": 5000,
+            "verbose": 1,
+            "random_state": 42,
+        }
+        ##this saves the tsne output as a csv file with: structure id, y, tsne 1, tsne 2 as the columns
+        ##Currently only works if there is one y column in targets.csv
+        training.analysis(
+            dataset,
+            config["Job"]["model_path"],
+            tsne_args,
+        )
+
+    else:
+        print("No valid mode selected, try again")
+
+    print("--- %s total seconds elapsed ---" % (time.time() - start_time))
+
+
+if __name__ == "__main__":
+    main()

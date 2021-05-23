@@ -1,0 +1,1 @@
+1. Unzip the tar file with: "tar -xvf pt_data.tar.gz"
