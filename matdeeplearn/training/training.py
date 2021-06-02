@@ -7,6 +7,7 @@ import shutil
 import copy
 import numpy as np
 from functools import partial
+import platform
 
 ##Torch imports
 import torch.nn.functional as F
@@ -228,7 +229,10 @@ def ddp_setup(rank, world_size):
         return
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12355"
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    if platform.system() == 'Windows':
+        dist.init_process_group("gloo", rank=rank, world_size=world_size)    
+    else:
+        dist.init_process_group("nccl", rank=rank, world_size=world_size)
     torch.backends.cudnn.enabled = False
     torch.backends.cudnn.benchmark = True
 
@@ -524,7 +528,7 @@ def train_regular(
             dist.destroy_process_group()
 
         ##Write out model performance to file
-        error_values = np.array((train_error, val_error, test_error))
+        error_values = np.array((train_error.cpu(), val_error.cpu(), test_error.cpu()))
         if job_parameters.get("write_error") == "True":
             np.savetxt(
                 job_parameters["job_name"] + "_errorvalues.csv",

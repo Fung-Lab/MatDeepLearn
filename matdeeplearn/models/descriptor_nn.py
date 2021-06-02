@@ -38,7 +38,10 @@ class SM(torch.nn.Module):
         for layer in self.lin_list:
             out = F.relu(layer(out))
         out = self.lin2(out)
-        return out.view(-1)
+        if out.shape[1] == 1:
+            return out.view(-1)
+        else:
+            return out
 
 
 # Smooth Overlap of Atomic Positions with neural network
@@ -60,4 +63,7 @@ class SOAP(torch.nn.Module):
         for layer in self.lin_list:
             out = F.relu(layer(out))
         out = self.lin2(out)
-        return out.view(-1)
+        if out.shape[1] == 1:
+            return out.view(-1)
+        else:
+            return out

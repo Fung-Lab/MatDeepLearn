@@ -12,17 +12,3 @@ scikit_learn==0.24.0
 ase==3.20.1
 pymatgen==2020.9.14
 ray==1.0.1
-
-#Torch
--f https://download.pytorch.org/whl/torch_stable.html
-torch==1.8.1+cu102
-torchvision==0.9.1+cu102
-torchaudio===0.8.1
-
-#Torch Geometric 
--f https://pytorch-geometric.com/whl/torch-1.8.0+cu102.html
-torch-scatter
-torch-sparse
-torch-cluster
-torch-spline-conv
-torch-geometric
