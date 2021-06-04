@@ -50,7 +50,7 @@ Prerequisites are listed in requirements.txt. You will need two key packages, 1.
 
 This example provides instructions for a bare minimum calculation. We will run the example with a on a small dataset (the Pt subset dataset containing ~1000 entries). This is just a toy example to test if the package is installed and working. Procedure below:
 
-1. Go to MatDeepLearn/data/ and type
+1. Go to MatDeepLearn/data/test_data and type
 	```bash
 	tar -xvf test_data.tar.gz 
 	```
