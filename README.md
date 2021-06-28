@@ -58,7 +58,7 @@ This example provides instructions for a bare minimum calculation. We will run t
 	
 2.	Go to MatDeepLearn, type
 	```bash
-	python main.py --data_path=data/test_data
+	python main.py --data_path=data/test_data/test_data
 	```
 	where default settings will be used and configurations will be read from the provided config.yml.
 	
