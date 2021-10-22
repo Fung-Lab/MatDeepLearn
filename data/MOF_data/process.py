@@ -4,9 +4,9 @@ from ase.io import read
 import numpy as np
 import csv
 
-mofs = ase.io.read('opt-geometries.xyz',index=':')
-refcodes = np.genfromtxt('opt-refcodes.csv',delimiter=',',dtype=str)
-properties = np.genfromtxt('opt-bandgaps.csv',delimiter=',',dtype=str)
+mofs = ase.io.read('qmof-geometries.xyz',index=':')
+refcodes = np.genfromtxt('qmof-refcodes.csv',delimiter=',',dtype=str)
+properties = np.genfromtxt('qmof-bandgaps.csv',delimiter=',',dtype=str)
 print(len(mofs), len(refcodes), properties.shape)
 
 if not os.path.exists('MOF_data'):
