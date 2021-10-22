@@ -25,7 +25,7 @@ Prerequisites are listed in requirements.txt. You will need two key packages, 1.
 
 1. **Pytorch**: The package has been tested on Pytorch 1.9. To install, for example:
 	```bash
-	pip install torch==1.10.0
+	pip install torch==1.9.0
 	```
 2. **Pytorch-Geometric:**  The package has been tested on Pytorch-Geometric. 2.0.1 To install, [follow their instructions](https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html), for example:
 	```bash
