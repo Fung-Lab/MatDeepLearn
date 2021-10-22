@@ -23,11 +23,11 @@ MatDeepLearn is currently under active development with more features to be adde
 
 Prerequisites are listed in requirements.txt. You will need two key packages, 1. Pytorch and 2. Pytorch-Geometric. You may want to create a virtual environment first, using Conda for example.
 
-1. **Pytorch**: The package has been tested on Pytorch 1.8. To install, for example:
+1. **Pytorch**: The package has been tested on Pytorch 1.9. To install, for example:
 	```bash
-	pip install torch==1.8.0 torchvision==0.9.0
+	pip install torch==1.10.0
 	```
-2. **Pytorch-Geometric:**  The package has been tested on Pytorch-Geometric. 1.7.0. To install, [follow their instructions](https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html), for example:
+2. **Pytorch-Geometric:**  The package has been tested on Pytorch-Geometric. 2.0.1 To install, [follow their instructions](https://pytorch-geometric.readthedocs.io/en/latest/notes/installation.html), for example:
 	```bash
     pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-${TORCH}+${CUDA}.html
     pip install torch-sparse -f https://pytorch-geometric.com/whl/torch-${TORCH}+${CUDA}.html
@@ -35,7 +35,7 @@ Prerequisites are listed in requirements.txt. You will need two key packages, 1.
     pip install torch-spline-conv -f https://pytorch-geometric.com/whl/torch-${TORCH}+${CUDA}.html
     pip install torch-geometric
 	```	
-    where where ${CUDA} and ${TORCH} should be replaced by your specific CUDA version (cpu, cu92, cu101, cu102, cu110, cu111) and PyTorch version (1.4.0, 1.5.0, 1.6.0, 1.7.0, 1.8.0), respectively.
+    where where ${CUDA} and ${TORCH} should be replaced by your specific CUDA version (cpu, cu92, cu101, cu102, cu110, cu111) and PyTorch version (1.7.0, 1.8.0, 1.9.0), respectively.
 
 3. **Remaining requirements:** The remainder may be installed by:
 	```bash
@@ -50,7 +50,7 @@ Prerequisites are listed in requirements.txt. You will need two key packages, 1.
 
 This example provides instructions for a bare minimum calculation. We will run the example with a on a small dataset (the Pt subset dataset containing ~1000 entries). This is just a toy example to test if the package is installed and working. Procedure below:
 
-1. Go to MatDeepLearn/data/test_data and type
+1. Go to MatDeepLearn/data/ and type
 	```bash
 	tar -xvf test_data.tar.gz 
 	```

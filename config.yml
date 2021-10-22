@@ -168,7 +168,7 @@ Models:
         pre_fc_count: 1
         gc_count: 4
         post_fc_count: 3
-        pool: "global_max_pool"
+        pool: "global_mean_pool"
         pool_order: "early"
         batch_norm: "True"
         batch_track_stats: "True"
@@ -205,7 +205,7 @@ Models:
         scheduler_args: {"mode":"min", "factor":0.8, "patience":10, "min_lr":0.00001, "threshold":0.0002}              
     GCN_demo:
         model: GCN
-        dim1: 100
+        dim1: 100 
         dim2: 150
         pre_fc_count: 1
         gc_count: 4

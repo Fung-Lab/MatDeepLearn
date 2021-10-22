@@ -15,7 +15,7 @@ count=0
 targets=[]
 for i in range(0, len(refcodes)):
   ase.io.write(os.path.join('MOF_data',str(refcodes[i])+'.json'), mofs[i])
-  targets.append([str(refcodes[i]), properties[i,1]])
+  targets.append([str(refcodes[i]), properties[i+1,1]])
   count=count+1
 with open(os.path.join('MOF_data',"targets.csv"), 'w', newline='') as f:
   wr = csv.writer(f)

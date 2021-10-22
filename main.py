@@ -40,7 +40,7 @@ def main():
         "--config_path",
         default="config.yml",
         type=str,
-        help="Location of config file (default: config.json)",
+        help="Location of config file (default: config.yml)",
     )
     parser.add_argument(
         "--run_mode",
@@ -58,7 +58,7 @@ def main():
         "--model",
         default=None,
         type=str,
-        help="CGCNN_demo, MPNN_demo, SchNet_demo, MEGNet_demo, GCN_net_demo, SOAP_demo, SM_demo",
+        help="CGCNN_demo, MPNN_demo, SchNet_demo, MEGNet_demo, GCN_demo, SOAP_demo, SM_demo",
     )
     parser.add_argument(
         "--seed",
@@ -236,6 +236,7 @@ def main():
 
         print("Dataset used:", dataset)
         print(dataset[0])
+        print(dataset[0].x[0],dataset[0].x[-1])
 
         print("--- %s seconds for processing ---" % (time.time() - process_start_time))
 
