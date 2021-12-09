@@ -1,26 +1,34 @@
-import ase
 import os
-from ase.io import read
-import numpy as np
 import csv
+import json
+import pandas as pd
+from pymatgen.core import Structure
+from pymatgen.io.ase import AseAtomsAdaptor
+from ase.io import write
 
-mofs = ase.io.read('opt-geometries.xyz',index=':')
-refcodes = np.genfromtxt('opt-refcodes.csv',delimiter=',',dtype=str)
-properties = np.genfromtxt('opt-bandgaps.csv',delimiter=',',dtype=str)
-print(len(mofs), len(refcodes), properties.shape)
+# Read in QMOF data
+with open("qmof.json") as f:
+    qmof = json.load(f)
+qmof_df = pd.json_normalize(qmof).set_index("qmof_id")
 
-if not os.path.exists('MOF_data'):
-  os.mkdir('MOF_data')
-count=0
-targets=[]
-for i in range(0, len(refcodes)):
-  ase.io.write(os.path.join('MOF_data',str(refcodes[i])+'.json'), mofs[i])
-  targets.append([str(refcodes[i]), properties[i+1,1]])
-  count=count+1
-with open(os.path.join('MOF_data',"targets.csv"), 'w', newline='') as f:
-  wr = csv.writer(f)
-  wr.writerows(targets)        
-print(count)
-  
+with open("qmof_structure_data.json") as f:
+    qmof_struct_data = json.load(f)
 
+# Make MOF_data folder
+if not os.path.exists("MOF_data"):
+    os.mkdir("MOF_data")
 
+# Write out data
+targets = []
+for entry in qmof_struct_data:
+    qmof_id = entry["qmof_id"]
+    print(f"Writing {qmof_id}")
+    mof = AseAtomsAdaptor().get_atoms(Structure.from_dict(entry["structure"]))
+    write(os.path.join("MOF_data", f"{qmof_id}.json"), mof)
+    targets.append([qmof_id, qmof_df.loc[qmof_id]["outputs.pbe.bandgap"]])
+
+with open(os.path.join("MOF_data", "targets.csv"), "w", newline="") as f:
+    wr = csv.writer(f)
+    wr.writerows(targets)
+
+print(len(targets))
