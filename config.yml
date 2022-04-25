@@ -244,4 +244,15 @@ Models:
         optimizer: "AdamW"
         optimizer_args: {}
         scheduler: "ReduceLROnPlateau"
-        scheduler_args: {"mode":"min", "factor":0.8, "patience":10, "min_lr":0.00001, "threshold":0.0002}          
+        scheduler_args: {"mode":"min", "factor":0.8, "patience":10, "min_lr":0.00001, "threshold":0.0002}
+    DimeNet_demo:
+        model: DimeNetWrap
+        num_targets: 1
+        epochs: 5
+        lr: 0.002
+        out_channels: 1
+        batch_size: 100
+        optimizer: "AdamW"
+        optimizer_args: {}
+        scheduler: "ReduceLROnPlateau"
+        scheduler_args: {"mode":"min", "factor":0.8, "patience":10, "min_lr":0.00001, "threshold":0.0002}
