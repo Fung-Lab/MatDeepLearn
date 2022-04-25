@@ -3,6 +3,7 @@ from .mpnn import MPNN
 from .schnet import SchNet
 from .cgcnn import CGCNN
 from .megnet import MEGNet
+from .dimenet import DimeNetWrap
 from .descriptor_nn import SOAP, SM
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "MEGNet",
     "SOAP",
     "SM",
+    "DimeNetWrap"
 ]
