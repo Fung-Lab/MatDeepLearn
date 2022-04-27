@@ -42,7 +42,7 @@ def train(model, optimizer, loader, loss_method, rank):
         print("printing output")
         print("--")
         print(output)
-        exit()
+        # exit()
         # print(data.y.shape, output.shape)
         loss = getattr(F, loss_method)(output, data.y)
         loss.backward()
