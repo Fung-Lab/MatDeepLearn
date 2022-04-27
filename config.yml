@@ -79,7 +79,7 @@ Processing:
     #Whether to use "inmemory" or "large" format for pytorch-geometric dataset. Reccomend inmemory unless the dataset is too large
     dataset_type: "inmemory"  
     #Path to data files
-    data_path: "/data" 
+    data_path: "data/2D_data" 
     #Path to target file within data_path
     target_path: "targets.csv"
     #Method of obtaining atom idctionary: available:(provided, default, blank, generated)
@@ -111,9 +111,9 @@ Training:
     #Loss functions (from pytorch) examples: l1_loss, mse_loss, binary_cross_entropy
     loss: "l1_loss"       
     #Ratios for train/val/test split out of a total of 1  
-    train_ratio: 0.8
-    val_ratio: 0.05
-    test_ratio: 0.15
+    train_ratio: 1.0
+    val_ratio: 0.0
+    test_ratio: 0.0
     #Training print out frequency (print per n number of epochs)
     verbosity: 5
     
@@ -250,7 +250,7 @@ Models:
         epochs: 1
         lr: 0.0001
         out_channels: 1
-        batch_size: 1
+        batch_size: 2
         optimizer: "AdamW"
         optimizer_args: {}
         scheduler: "ReduceLROnPlateau"

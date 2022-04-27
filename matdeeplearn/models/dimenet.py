@@ -241,104 +241,181 @@ class DimeNetWrap(DimeNet):
 
     # @conditional_grad(torch.enable_grad())
     def forward(self, data):
-        pos = data.pos
-        batch = data.batch
 
-        if self.otf_graph:
-            edge_index, cell_offsets, neighbors = radius_graph_pbc(
-                data, self.cutoff, 50
-            )
-            data.edge_index = edge_index
-            data.cell_offsets = cell_offsets
-            data.neighbors = neighbors
+        energies = torch.zeros(data.num_graphs, requires_grad=True)
 
-        if self.use_pbc:
-            out = get_pbc_distances(
-                pos,
-                data.edge_index,
-                data.cell,
-                data.cell_offsets,
-                data.neighbors,
-                return_offsets=True,
-            )
+        for graph in range(data.num_graphs):
+            structure = data.get_example(graph)
+            print(structure)
 
-            edge_index = out["edge_index"]
-            dist = out["distances"]
-            offsets = out["offsets"]
+            pos = structure.pos
+            batch = structure.batch
 
-            j, i = edge_index
-        else:
-            edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
-            j, i = edge_index
-            dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
+            if self.otf_graph:
+                edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                    structure, self.cutoff, 50
+                )
+                structure.edge_index = edge_index
+                structure.cell_offsets = cell_offsets
+                structure.neighbors = neighbors
 
-        _, _, idx_i, idx_j, idx_k, idx_kj, idx_ji = self.triplets(
-            edge_index,
-            data.cell_offsets,
-            num_nodes=data.atomic_numbers.size(0),
-        )
+            if self.use_pbc:
+                out = get_pbc_distances(
+                    pos,
+                    structure.edge_index,
+                    structure.cell,
+                    structure.cell_offsets,
+                    structure.neighbors,
+                    return_offsets=True,
+                )
 
-        # Cap no. of triplets during training.
-        if self.training:
-            sub_ix = torch.randperm(idx_i.size(0))[
-                : self.max_angles_per_image * data.natoms.size(0)
-            ]
-            idx_i, idx_j, idx_k = (
-                idx_i[sub_ix],
-                idx_j[sub_ix],
-                idx_k[sub_ix],
-            )
-            idx_kj, idx_ji = idx_kj[sub_ix], idx_ji[sub_ix]
+                edge_index = out["edge_index"]
+                dist = out["distances"]
+                offsets = out["offsets"]
 
-        # Calculate angles.
-        pos_i = pos[idx_i].detach()
-        pos_j = pos[idx_j].detach()
-        if self.use_pbc:
-            pos_ji, pos_kj = (
-                pos[idx_j].detach() - pos_i + offsets[idx_ji],
-                pos[idx_k].detach() - pos_j + offsets[idx_kj],
-            )
-        else:
-            pos_ji, pos_kj = (
-                pos[idx_j].detach() - pos_i,
-                pos[idx_k].detach() - pos_j,
+                j, i = edge_index
+            else:
+                edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
+                j, i = edge_index
+                dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
+
+            _, _, idx_i, idx_j, idx_k, idx_kj, idx_ji = self.triplets(
+                edge_index,
+                structure.cell_offsets,
+                num_nodes=structure.atomic_numbers.size(0),
             )
 
-        a = (pos_ji * pos_kj).sum(dim=-1)
-        b = torch.cross(pos_ji, pos_kj).norm(dim=-1)
-        angle = torch.atan2(b, a)
+            # Cap no. of triplets during training.
+            if self.training:
+                sub_ix = torch.randperm(idx_i.size(0))[
+                    : self.max_angles_per_image * structure.natoms.size(0)
+                ]
+                idx_i, idx_j, idx_k = (
+                    idx_i[sub_ix],
+                    idx_j[sub_ix],
+                    idx_k[sub_ix],
+                )
+                idx_kj, idx_ji = idx_kj[sub_ix], idx_ji[sub_ix]
 
-        rbf = self.rbf(dist)
-        sbf = self.sbf(dist, angle, idx_kj)
+            # Calculate angles.
+            pos_i = pos[idx_i].detach()
+            pos_j = pos[idx_j].detach()
+            if self.use_pbc:
+                pos_ji, pos_kj = (
+                    pos[idx_j].detach() - pos_i + offsets[idx_ji],
+                    pos[idx_k].detach() - pos_j + offsets[idx_kj],
+                )
+            else:
+                pos_ji, pos_kj = (
+                    pos[idx_j].detach() - pos_i,
+                    pos[idx_k].detach() - pos_j,
+                )
 
-        # Embedding block.
-        x = self.emb(data.atomic_numbers.long(), rbf, i, j)
-        P = self.output_blocks[0](x, rbf, i, num_nodes=pos.size(0))
+            a = (pos_ji * pos_kj).sum(dim=-1)
+            b = torch.cross(pos_ji, pos_kj).norm(dim=-1)
+            angle = torch.atan2(b, a)
 
-        # Interaction blocks.
-        for interaction_block, output_block in zip(
-            self.interaction_blocks, self.output_blocks[1:]
-        ):
-            x = interaction_block(x, rbf, sbf, idx_kj, idx_ji)
-            P += output_block(x, rbf, i, num_nodes=pos.size(0))
+            rbf = self.rbf(dist)
+            sbf = self.sbf(dist, angle, idx_kj)
 
-        energy = P.sum(dim=0) if batch is None else scatter(P, batch, dim=0)
-        return energy
+            # Embedding block.
+            x = self.emb(structure.atomic_numbers.long(), rbf, i, j)
+            P = self.output_blocks[0](x, rbf, i, num_nodes=pos.size(0))
+
+            # Interaction blocks.
+            for interaction_block, output_block in zip(
+                self.interaction_blocks, self.output_blocks[1:]
+            ):
+                x = interaction_block(x, rbf, sbf, idx_kj, idx_ji)
+                P += output_block(x, rbf, i, num_nodes=pos.size(0))
+
+            energy = P.sum(dim=0) if batch is None else scatter(P, batch, dim=0)
+            print(energy)
+            print(energies[graph])\
+                # = energy
+        return energies
 
     # def forward(self, data):
-    #     if self.regress_forces:
-    #         data.pos.requires_grad_(True)
-    #     energy = self._forward(data)
+    #     pos = data.pos
+    #     batch = data.batch
     #
-    #     if self.regress_forces:
-    #         forces = -1 * (
-    #             torch.autograd.grad(
-    #                 energy,
-    #                 data.pos,
-    #                 grad_outputs=torch.ones_like(energy),
-    #                 create_graph=True,
-    #             )[0]
+    #     if self.otf_graph:
+    #         edge_index, cell_offsets, neighbors = radius_graph_pbc(
+    #             data, self.cutoff, 50
     #         )
-    #         return energy, forces
+    #         data.edge_index = edge_index
+    #         data.cell_offsets = cell_offsets
+    #         data.neighbors = neighbors
+    #
+    #     if self.use_pbc:
+    #         out = get_pbc_distances(
+    #             pos,
+    #             data.edge_index,
+    #             data.cell,
+    #             data.cell_offsets,
+    #             data.neighbors,
+    #             return_offsets=True,
+    #         )
+    #
+    #         edge_index = out["edge_index"]
+    #         dist = out["distances"]
+    #         offsets = out["offsets"]
+    #
+    #         j, i = edge_index
     #     else:
-    #         return energy
+    #         edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
+    #         j, i = edge_index
+    #         dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
+    #
+    #     _, _, idx_i, idx_j, idx_k, idx_kj, idx_ji = self.triplets(
+    #         edge_index,
+    #         data.cell_offsets,
+    #         num_nodes=data.atomic_numbers.size(0),
+    #     )
+    #
+    #     # Cap no. of triplets during training.
+    #     if self.training:
+    #         sub_ix = torch.randperm(idx_i.size(0))[
+    #             : self.max_angles_per_image * data.natoms.size(0)
+    #         ]
+    #         idx_i, idx_j, idx_k = (
+    #             idx_i[sub_ix],
+    #             idx_j[sub_ix],
+    #             idx_k[sub_ix],
+    #         )
+    #         idx_kj, idx_ji = idx_kj[sub_ix], idx_ji[sub_ix]
+    #
+    #     # Calculate angles.
+    #     pos_i = pos[idx_i].detach()
+    #     pos_j = pos[idx_j].detach()
+    #     if self.use_pbc:
+    #         pos_ji, pos_kj = (
+    #             pos[idx_j].detach() - pos_i + offsets[idx_ji],
+    #             pos[idx_k].detach() - pos_j + offsets[idx_kj],
+    #         )
+    #     else:
+    #         pos_ji, pos_kj = (
+    #             pos[idx_j].detach() - pos_i,
+    #             pos[idx_k].detach() - pos_j,
+    #         )
+    #
+    #     a = (pos_ji * pos_kj).sum(dim=-1)
+    #     b = torch.cross(pos_ji, pos_kj).norm(dim=-1)
+    #     angle = torch.atan2(b, a)
+    #
+    #     rbf = self.rbf(dist)
+    #     sbf = self.sbf(dist, angle, idx_kj)
+    #
+    #     # Embedding block.
+    #     x = self.emb(data.atomic_numbers.long(), rbf, i, j)
+    #     P = self.output_blocks[0](x, rbf, i, num_nodes=pos.size(0))
+    #
+    #     # Interaction blocks.
+    #     for interaction_block, output_block in zip(
+    #         self.interaction_blocks, self.output_blocks[1:]
+    #     ):
+    #         x = interaction_block(x, rbf, sbf, idx_kj, idx_ji)
+    #         P += output_block(x, rbf, i, num_nodes=pos.size(0))
+    #
+    #     energy = P.sum(dim=0) if batch is None else scatter(P, batch, dim=0)
+    #     return energy
