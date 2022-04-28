@@ -242,11 +242,13 @@ class DimeNetWrap(DimeNet):
     # @conditional_grad(torch.enable_grad())
     def forward(self, data):
 
-        energies = torch.zeros(data.num_graphs)
+
+        # energies = torch.zeros(data.num_graphs, 1).to(data.pos.device)
+        energies = torch.Tensor(()).to(data.pos.device)
 
         for graph in range(data.num_graphs):
             structure = data.get_example(graph)
-            print(structure)
+            # print(structure)
 
             pos = structure.pos
             batch = structure.batch
@@ -330,9 +332,11 @@ class DimeNetWrap(DimeNet):
                 P += output_block(x, rbf, i, num_nodes=pos.size(0))
 
             energy = P.sum(dim=0) if batch is None else scatter(P, batch, dim=0)
-            print(energy)
-            print(energies[graph])
-            energies[graph] = energy
+            # print(energy)
+            # energies[graph] = energy.clone()
+            # print(energies[graph])
+            energies = torch.cat((energies, energy), 0)
+            # print(energies)
         return energies
 
     # def forward(self, data):
