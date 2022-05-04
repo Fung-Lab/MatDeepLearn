@@ -19,6 +19,7 @@ from torch_geometric.utils import dense_to_sparse, degree, add_self_loops
 from torch_scatter import segment_coo, segment_csr
 import torch_geometric.transforms as T
 from torch_geometric.utils import degree
+from matdeeplearn.models.dimenet_utils import *
 
 ################################################################################
 # Data splitting
@@ -330,19 +331,42 @@ def process_data(data_path, processed_path, processing_args):
         # PABLO
         do_dimenet_data = True
         if do_dimenet_data:
+
             atomic_numbers = torch.Tensor(ase_crystal.get_atomic_numbers())
             pos = torch.Tensor(ase_crystal.get_positions())
             natoms = pos.shape[0]
 
             data.pos = pos
-            data.natoms = natoms
+            data.natoms = torch.Tensor([natoms]).long()
             data.atomic_numbers = atomic_numbers
-
             edge_index, _, cell_offsets = mod_data_for_dimenet(data.ase)
             data.edge_index = edge_index
             data.cell_offsets = cell_offsets
             # 3 cartesian vectors shaped into a 3x3 cell -- Pablo
             data.cell = torch.Tensor(ase_crystal.get_cell()).view(1, 3, 3)
+            # print("----\ninside process")
+            # print(data.natoms)
+            cutoff = 10
+            edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                data, cutoff, 50
+            )
+            data.edge_index = edge_index
+            data.cell_offsets = cell_offsets
+            data.neighbors = neighbors
+
+            out = get_pbc_distances(
+                pos,
+                data.edge_index,
+                data.cell,
+                data.cell_offsets,
+                data.neighbors,
+                return_offsets=True,
+            )
+
+            data.edge_index = out["edge_index"]
+            data.dist = out["distances"]
+            data.offsets = out["offsets"]
+
 
         ###placeholder for state feature
         u = np.zeros((3))

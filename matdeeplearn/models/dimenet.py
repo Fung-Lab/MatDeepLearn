@@ -242,45 +242,50 @@ class DimeNetWrap(DimeNet):
     # @conditional_grad(torch.enable_grad())
     def forward(self, data):
 
-        energies = torch.zeros(data.num_graphs)
+        energies = torch.Tensor(()).to(data.pos.device)
 
         for graph in range(data.num_graphs):
             structure = data.get_example(graph)
-            print(structure)
+            # print(structure)
 
             pos = structure.pos
             batch = structure.batch
 
-            if self.otf_graph:
-                edge_index, cell_offsets, neighbors = radius_graph_pbc(
-                    structure, self.cutoff, 50
-                )
-                structure.edge_index = edge_index
-                structure.cell_offsets = cell_offsets
-                structure.neighbors = neighbors
+            # if self.otf_graph:
+            #     edge_index, cell_offsets, neighbors = radius_graph_pbc(
+            #         structure, self.cutoff, 50
+            #     )
+            #     structure.edge_index = edge_index
+            #     structure.cell_offsets = cell_offsets
+            #     structure.neighbors = neighbors
+            #
+            # if self.use_pbc:
+            #     out = get_pbc_distances(
+            #         pos,
+            #         structure.edge_index,
+            #         structure.cell,
+            #         structure.cell_offsets,
+            #         structure.neighbors,
+            #         return_offsets=True,
+            #     )
+            #
+                # edge_index = out["edge_index"]
+                # dist = out["distances"]
+                # offsets = out["offsets"]
 
-            if self.use_pbc:
-                out = get_pbc_distances(
-                    pos,
-                    structure.edge_index,
-                    structure.cell,
-                    structure.cell_offsets,
-                    structure.neighbors,
-                    return_offsets=True,
-                )
+            # edge_index = structure.edge_index
+            # dist = structure.dist
+            # offsets = structure.offsets
 
-                edge_index = out["edge_index"]
-                dist = out["distances"]
-                offsets = out["offsets"]
+            j, i = structure.edge_index
 
-                j, i = edge_index
-            else:
-                edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
-                j, i = edge_index
-                dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
+            # else:
+            #     edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
+            #     j, i = edge_index
+            #     dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
 
             _, _, idx_i, idx_j, idx_k, idx_kj, idx_ji = self.triplets(
-                edge_index,
+                structure.edge_index,
                 structure.cell_offsets,
                 num_nodes=structure.atomic_numbers.size(0),
             )
@@ -302,8 +307,8 @@ class DimeNetWrap(DimeNet):
             pos_j = pos[idx_j].detach()
             if self.use_pbc:
                 pos_ji, pos_kj = (
-                    pos[idx_j].detach() - pos_i + offsets[idx_ji],
-                    pos[idx_k].detach() - pos_j + offsets[idx_kj],
+                    pos[idx_j].detach() - pos_i + structure.offsets[idx_ji],
+                    pos[idx_k].detach() - pos_j + structure.offsets[idx_kj],
                 )
             else:
                 pos_ji, pos_kj = (
@@ -315,8 +320,8 @@ class DimeNetWrap(DimeNet):
             b = torch.cross(pos_ji, pos_kj).norm(dim=-1)
             angle = torch.atan2(b, a)
 
-            rbf = self.rbf(dist)
-            sbf = self.sbf(dist, angle, idx_kj)
+            rbf = self.rbf(structure.dist)
+            sbf = self.sbf(structure.dist, angle, idx_kj)
 
             # Embedding block.
             x = self.emb(structure.atomic_numbers.long(), rbf, i, j)
@@ -330,9 +335,10 @@ class DimeNetWrap(DimeNet):
                 P += output_block(x, rbf, i, num_nodes=pos.size(0))
 
             energy = P.sum(dim=0) if batch is None else scatter(P, batch, dim=0)
-            print(energy)
-            print(energies[graph])
-            energies[graph] = energy
+            # print(energy)
+            # print(energies[graph])
+            # energies[graph] = energy
+            energies = torch.cat((energies, energy), 0)
         return energies
 
     # def forward(self, data):

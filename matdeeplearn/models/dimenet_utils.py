@@ -62,7 +62,6 @@ def conditional_grad(dec):
 def radius_graph_pbc(data, radius, max_num_neighbors_threshold):
     device = data.pos.device
     batch_size = len(data.natoms)
-
     # position of the atoms
     atom_pos = data.pos
 
