@@ -18,6 +18,7 @@ from torch_geometric.data import DataLoader, Dataset, Data, InMemoryDataset
 from torch_geometric.utils import dense_to_sparse, degree, add_self_loops
 import torch_geometric.transforms as T
 from torch_geometric.utils import degree
+from matdeeplearn.models.dimenet_utils import *
 
 ################################################################################
 # Data splitting
@@ -326,6 +327,46 @@ def process_data(data_path, processed_path, processing_args):
         z = torch.LongTensor(ase_crystal.get_atomic_numbers())
         data.z = z
 
+        ### DimeNet data processing here
+        # PABLO
+        do_dimenet_data = True
+        if do_dimenet_data:
+
+            atomic_numbers = torch.Tensor(ase_crystal.get_atomic_numbers())
+            pos = torch.Tensor(ase_crystal.get_positions())
+            natoms = pos.shape[0]
+
+            data.pos = pos
+            data.natoms = torch.Tensor([natoms]).long()
+            data.atomic_numbers = atomic_numbers
+            edge_index, _, cell_offsets = mod_data_for_dimenet(data.ase)
+            data.edge_index = edge_index
+            data.cell_offsets = cell_offsets
+            # 3 cartesian vectors shaped into a 3x3 cell -- Pablo
+            data.cell = torch.Tensor(ase_crystal.get_cell()).view(1, 3, 3)
+            # print("----\ninside process")
+            # print(data.natoms)
+            cutoff = 10
+            edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                data, cutoff, 50
+            )
+            data.edge_index = edge_index
+            data.cell_offsets = cell_offsets
+            data.neighbors = neighbors
+
+            out = get_pbc_distances(
+                pos,
+                data.edge_index,
+                data.cell,
+                data.cell_offsets,
+                data.neighbors,
+                return_offsets=True,
+            )
+
+            data.edge_index = out["edge_index"]
+            data.dist = out["distances"]
+            data.offsets = out["offsets"]
+
         ###placeholder for state feature
         u = np.zeros((3))
         u = torch.Tensor(u[np.newaxis, ...])
@@ -381,11 +422,11 @@ def process_data(data_path, processed_path, processing_args):
                 lb.transform(data_list[index].ase.get_chemical_symbols())
             )
 
-    ##Adds node degree to node features (appears to improve performance)
-    for index in range(0, len(data_list)):
-        data_list[index] = OneHotDegree(
-            data_list[index], processing_args["graph_max_neighbors"] + 1
-        )
+    # ##Adds node degree to node features (appears to improve performance)
+    # for index in range(0, len(data_list)):
+    #     data_list[index] = OneHotDegree(
+    #         data_list[index], processing_args["graph_max_neighbors"] + 1
+    #     )
 
     ##Get graphs based on voronoi connectivity; todo: also get voronoi features
     ##avoid use for the time being until a good approach is found
@@ -701,3 +742,78 @@ class GetY(object):
         if self.index != -1:
             data.y = data.y[0][self.index]
         return data
+
+### Functions for converting Data for Dimenet model ###
+def mod_data_for_dimenet(atoms):
+    split_idx_dist = _get_neighbors_pymatgen(atoms)
+    edge_index, edge_distances, cell_offsets = _reshape_features(
+        *split_idx_dist
+    )
+
+    return edge_index, edge_distances, cell_offsets
+
+def _reshape_features(c_index, n_index, n_distance, offsets):
+    """Stack center and neighbor index and reshapes distances,
+    takes in np.arrays and returns torch tensors"""
+    edge_index = torch.LongTensor(np.vstack((n_index, c_index)))
+    edge_distances = torch.FloatTensor(n_distance)
+    cell_offsets = torch.LongTensor(offsets)
+
+    # remove distances smaller than a tolerance ~ 0. The small tolerance is
+    # needed to correct for pymatgen's neighbor_list returning self atoms
+    # in a few edge cases.
+    nonzero = torch.where(edge_distances >= 1e-8)[0]
+    edge_index = edge_index[:, nonzero]
+    edge_distances = edge_distances[nonzero]
+    cell_offsets = cell_offsets[nonzero]
+
+    return edge_index, edge_distances, cell_offsets
+
+
+def _get_neighbors_pymatgen(atoms):
+    """Preforms nearest neighbor search and returns edge index, distances,
+    and cell offsets"""
+    from pymatgen.io.ase import AseAtomsAdaptor
+    max_neigh = 200
+    radius = 6
+    # r_energy = False,
+    # r_forces = False,
+    # r_distances = False,
+    # r_edges = True
+    # r_fixed = True
+
+    struct = AseAtomsAdaptor.get_structure(atoms)
+    _c_index, _n_index, _offsets, n_distance = struct.get_neighbor_list(
+        r=radius, numerical_tol=0, exclude_self=True
+    )
+
+    _nonmax_idx = []
+    for i in range(len(atoms)):
+        idx_i = (_c_index == i).nonzero()[0]
+        # sort neighbors by distance, remove edges larger than max_neighbors
+        idx_sorted = np.argsort(n_distance[idx_i])[: max_neigh]
+        _nonmax_idx.append(idx_i[idx_sorted])
+    _nonmax_idx = np.concatenate(_nonmax_idx)
+
+    _c_index = _c_index[_nonmax_idx]
+    _n_index = _n_index[_nonmax_idx]
+    n_distance = n_distance[_nonmax_idx]
+    _offsets = _offsets[_nonmax_idx]
+
+    return _c_index, _n_index, n_distance, _offsets
+
+def compute_neighbors(data, edge_index):
+    # Get number of neighbors
+    # segment_coo assumes sorted index
+    ones = edge_index[1].new_ones(1).expand_as(edge_index[1])
+    num_neighbors = segment_coo(
+        ones, edge_index[1], dim_size=data.natoms.sum()
+    )
+
+    # Get number of neighbors per image
+    image_indptr = torch.zeros(
+        data.natoms.shape[0] + 1, device=data.pos.device, dtype=torch.long
+    )
+    image_indptr[1:] = torch.cumsum(data.natoms, dim=0)
+    neighbors = segment_csr(num_neighbors, image_indptr)
+    return neighbors
