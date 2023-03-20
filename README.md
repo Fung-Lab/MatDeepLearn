@@ -163,7 +163,7 @@ Distributed under the MIT License.
 
 ## Acknowledgements
 
-Contributors: Victor Fung, Eric Juarez, Jiaxin Zhang, Bobby Sumpter
+Contributors: Victor Fung, Eric Juarez, [Jiaxin Zhang](https://github.com/jxzhangjhu), Bobby Sumpter
 
 ## Contact
 
